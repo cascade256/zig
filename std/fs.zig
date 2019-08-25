@@ -87,13 +87,13 @@ pub fn updateFile(source_path: []const u8, dest_path: []const u8) !PrevStatus {
 /// If any of the directories do not exist for dest_path, they are created.
 /// TODO https://github.com/ziglang/zig/issues/2885
 pub fn updateFileMode(source_path: []const u8, dest_path: []const u8, mode: ?File.Mode) !PrevStatus {
-    var src_file = try File.openRead(source_path);
+    var src_file = try File.open(source_path, File.READ);
     defer src_file.close();
 
     const src_stat = try src_file.stat();
     check_dest_stat: {
         const dest_stat = blk: {
-            var dest_file = File.openRead(dest_path) catch |err| switch (err) {
+            var dest_file = File.open(dest_path, File.READ) catch |err| switch (err) {
                 error.FileNotFound => break :check_dest_stat,
                 else => |e| return e,
             };
@@ -156,7 +156,7 @@ pub fn updateFileMode(source_path: []const u8, dest_path: []const u8, mode: ?Fil
 /// in the same directory as dest_path.
 /// Destination file will have the same mode as the source file.
 pub fn copyFile(source_path: []const u8, dest_path: []const u8) !void {
-    var in_file = try File.openRead(source_path);
+    var in_file = try File.open(source_path, File.READ);
     defer in_file.close();
 
     const mode = try in_file.mode();
@@ -865,17 +865,17 @@ pub const OpenSelfExeError = os.OpenError || os.windows.CreateFileError || SelfE
 
 pub fn openSelfExe() OpenSelfExeError!File {
     if (os.linux.is_the_target) {
-        return File.openReadC(c"/proc/self/exe");
+        return File.openC(c"/proc/self/exe", File.READ);
     }
     if (os.windows.is_the_target) {
         var buf: [os.windows.PATH_MAX_WIDE]u16 = undefined;
         const wide_slice = try selfExePathW(&buf);
-        return File.openReadW(wide_slice.ptr);
+        return File.openW(wide_slice.ptr, File.READ);
     }
     var buf: [MAX_PATH_BYTES]u8 = undefined;
     const self_exe_path = try selfExePath(&buf);
     buf[self_exe_path.len] = 0;
-    return File.openReadC(self_exe_path.ptr);
+    return File.openC(self_exe_path.ptr, File.READ);
 }
 
 test "openSelfExe" {

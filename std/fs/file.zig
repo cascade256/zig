@@ -25,116 +25,95 @@ pub const File = struct {
 
     pub const OpenError = windows.CreateFileError || os.OpenError;
 
-    /// Call close to clean up.
-    pub fn openRead(path: []const u8) OpenError!File {
-        if (windows.is_the_target) {
-            const path_w = try windows.sliceToPrefixedFileW(path);
-            return openReadW(&path_w);
-        }
-        const path_c = try os.toPosixPath(path);
-        return openReadC(&path_c);
-    }
 
-    /// `openRead` except with a null terminated path
-    pub fn openReadC(path: [*]const u8) OpenError!File {
-        if (windows.is_the_target) {
-            const path_w = try windows.cStrToPrefixedFileW(path);
-            return openReadW(&path_w);
-        }
-        const flags = os.O_LARGEFILE | os.O_RDONLY;
-        const fd = try os.openC(path, flags, 0);
-        return openHandle(fd);
-    }
+    pub const READ = 1;
+    pub const WRITE = 2;
+    pub const CLOBBER = 4;
 
-    /// `openRead` except with a null terminated UTF16LE encoded path
-    pub fn openReadW(path_w: [*]const u16) OpenError!File {
+    pub fn openW(path: [*]const u16, flags: u32) OpenError!File{
+        assert(windows.is_the_target);
+
+        if((flags & CLOBBER) > 0 and !((flags & WRITE) > 0)) {
+            assert(false);//Cannot clobber a read only file! Did you forget to add '| WRITE'?
+        }
+        
+
+        var desiredAccess: u32 = 0;
+        if(flags & READ > 0) {
+            desiredAccess |= windows.GENERIC_READ;
+        }
+        if(flags & WRITE > 0) {
+            desiredAccess |= windows.GENERIC_WRITE;
+        }
+
+        var creationDisposition: u32 = windows.OPEN_EXISTING;
+        if(flags & CLOBBER > 0) {
+            creationDisposition = windows.CREATE_ALWAYS;
+        }
+
+        if(flags & WRITE > 0) {
+            creationDisposition = windows.OPEN_ALWAYS;
+        }
+
         const handle = try windows.CreateFileW(
-            path_w,
-            windows.GENERIC_READ,
-            windows.FILE_SHARE_READ,
+            path,
+            desiredAccess,
+            windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE | windows.FILE_SHARE_DELETE,
             null,
-            windows.OPEN_EXISTING,
+            creationDisposition,
             windows.FILE_ATTRIBUTE_NORMAL,
-            null,
+            null
         );
+
         return openHandle(handle);
     }
 
-    /// Calls `openWriteMode` with `default_mode` for the mode.
-    pub fn openWrite(path: []const u8) OpenError!File {
-        return openWriteMode(path, default_mode);
-    }
-
-    /// If the path does not exist it will be created.
-    /// If a file already exists in the destination it will be truncated.
-    /// Call close to clean up.
-    pub fn openWriteMode(path: []const u8, file_mode: Mode) OpenError!File {
-        if (windows.is_the_target) {
-            const path_w = try windows.sliceToPrefixedFileW(path);
-            return openWriteModeW(&path_w, file_mode);
+    pub fn openC(path: []const u8, comptime flags: u32) OpenError!File {
+        if((flags & CLOBBER) > 0 and !((flags & WRITE) > 0)) {
+            assert(false);//Cannot clobber a read only file! Did you forget to add '| WRITE'?
         }
-        const path_c = try os.toPosixPath(path);
-        return openWriteModeC(&path_c, file_mode);
-    }
-
-    /// Same as `openWriteMode` except `path` is null-terminated.
-    pub fn openWriteModeC(path: [*]const u8, file_mode: Mode) OpenError!File {
+    
         if (windows.is_the_target) {
             const path_w = try windows.cStrToPrefixedFileW(path);
-            return openWriteModeW(&path_w, file_mode);
+            return openW(&path_w, flags);
         }
-        const flags = os.O_LARGEFILE | os.O_WRONLY | os.O_CREAT | os.O_CLOEXEC | os.O_TRUNC;
-        const fd = try os.openC(path, flags, file_mode);
+
+        var posixFlags: u32 = O_LARGEFILE;
+
+        if(flags & READ > 0) {
+            if(flags & WRITE > 0) {
+                posixFlags |= O_RDWR;
+            }
+            else {
+                posixFlags |= O_RDONLY;
+            }
+        }
+        else if (flags & WRITE > 0) {
+            posixFlags |= O_WRONLY;
+        }
+        else {
+            assert(true);
+        }
+
+        if(flags & WRITE > 0) {
+            posixFlags |= O_CREAT;
+        }
+
+        if(flags & CLOBBER > 0) {
+            posixFlags |= O_TRUNC;
+        }
+
+        const fd = try os.openC(path, posixFlags, 0);
         return openHandle(fd);
     }
 
-    /// Same as `openWriteMode` except `path` is null-terminated and UTF16LE encoded
-    pub fn openWriteModeW(path_w: [*]const u16, file_mode: Mode) OpenError!File {
-        const handle = try windows.CreateFileW(
-            path_w,
-            windows.GENERIC_WRITE,
-            windows.FILE_SHARE_WRITE | windows.FILE_SHARE_READ | windows.FILE_SHARE_DELETE,
-            null,
-            windows.CREATE_ALWAYS,
-            windows.FILE_ATTRIBUTE_NORMAL,
-            null,
-        );
-        return openHandle(handle);
-    }
-
-    /// If the path does not exist it will be created.
-    /// If a file already exists in the destination this returns OpenError.PathAlreadyExists
-    /// Call close to clean up.
-    pub fn openWriteNoClobber(path: []const u8, file_mode: Mode) OpenError!File {
+    pub fn open(path: []const u8, flags: u32) OpenError!File {
         if (windows.is_the_target) {
             const path_w = try windows.sliceToPrefixedFileW(path);
-            return openWriteNoClobberW(&path_w, file_mode);
+            return openW(&path_w, flags);
         }
         const path_c = try os.toPosixPath(path);
-        return openWriteNoClobberC(&path_c, file_mode);
-    }
-
-    pub fn openWriteNoClobberC(path: [*]const u8, file_mode: Mode) OpenError!File {
-        if (windows.is_the_target) {
-            const path_w = try windows.cStrToPrefixedFileW(path);
-            return openWriteNoClobberW(&path_w, file_mode);
-        }
-        const flags = os.O_LARGEFILE | os.O_WRONLY | os.O_CREAT | os.O_CLOEXEC | os.O_EXCL;
-        const fd = try os.openC(path, flags, file_mode);
-        return openHandle(fd);
-    }
-
-    pub fn openWriteNoClobberW(path_w: [*]const u16, file_mode: Mode) OpenError!File {
-        const handle = try windows.CreateFileW(
-            path_w,
-            windows.GENERIC_WRITE,
-            windows.FILE_SHARE_WRITE | windows.FILE_SHARE_READ | windows.FILE_SHARE_DELETE,
-            null,
-            windows.CREATE_NEW,
-            windows.FILE_ATTRIBUTE_NORMAL,
-            null,
-        );
-        return openHandle(handle);
+        return openC(&path_c, flags);
     }
 
     pub fn openHandle(handle: os.fd_t) File {

@@ -1153,7 +1153,7 @@ fn openSelfDebugInfoMacOs(allocator: *mem.Allocator) !DebugInfo {
 }
 
 fn printLineFromFileAnyOs(out_stream: var, line_info: LineInfo) !void {
-    var f = try File.openRead(line_info.file_name);
+    var f = try File.open(line_info.file_name, File.READ);
     defer f.close();
     // TODO fstat and make sure that the file has the correct size
 

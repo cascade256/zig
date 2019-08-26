@@ -30,31 +30,33 @@ pub const File = struct {
     pub const WRITE = 2;
     pub const CLOBBER = 4;
 
-    pub fn openW(path: [*]const u16, flags: u32) OpenError!File{
+    pub fn openW(path: [*]const u16, comptime flags: u32) OpenError!File{
         assert(windows.is_the_target);
 
-        if((flags & CLOBBER) > 0 and !((flags & WRITE) > 0)) {
-            assert(false);//Cannot clobber a read only file! Did you forget to add '| WRITE'?
-        }
-        
+        comptime var desiredAccess: u32 = 0;
+        comptime var creationDisposition: u32 = windows.OPEN_EXISTING;
 
-        var desiredAccess: u32 = 0;
-        if(flags & READ > 0) {
-            desiredAccess |= windows.GENERIC_READ;
-        }
-        if(flags & WRITE > 0) {
-            desiredAccess |= windows.GENERIC_WRITE;
-        }
+        comptime {
+            if((flags & CLOBBER) > 0 and !((flags & WRITE) > 0)) {
+                @compileError("Cannot clobber a read only file! Did you forget to add '| WRITE'?");
+            }
+                
+            if(flags & READ > 0) {
+                desiredAccess |= windows.GENERIC_READ;
+            }
+            if(flags & WRITE > 0) {
+                desiredAccess |= windows.GENERIC_WRITE;
+            }
+    
+            if(flags & CLOBBER > 0) {
+                creationDisposition = windows.CREATE_ALWAYS;
+            }
 
-        var creationDisposition: u32 = windows.OPEN_EXISTING;
-        if(flags & CLOBBER > 0) {
-            creationDisposition = windows.CREATE_ALWAYS;
+            if(flags & WRITE > 0) {
+                creationDisposition = windows.OPEN_ALWAYS;
+            }
         }
-
-        if(flags & WRITE > 0) {
-            creationDisposition = windows.OPEN_ALWAYS;
-        }
-
+       
         const handle = try windows.CreateFileW(
             path,
             desiredAccess,
@@ -69,45 +71,47 @@ pub const File = struct {
     }
 
     pub fn openC(path: []const u8, comptime flags: u32) OpenError!File {
-        if((flags & CLOBBER) > 0 and !((flags & WRITE) > 0)) {
-            assert(false);//Cannot clobber a read only file! Did you forget to add '| WRITE'?
-        }
-    
         if (windows.is_the_target) {
             const path_w = try windows.cStrToPrefixedFileW(path);
             return openW(&path_w, flags);
         }
 
-        var posixFlags: u32 = O_LARGEFILE;
+        comptime var posixFlags: u32 = O_LARGEFILE;
 
-        if(flags & READ > 0) {
-            if(flags & WRITE > 0) {
-                posixFlags |= O_RDWR;
+        comptime {
+            if((flags & CLOBBER) > 0 and !((flags & WRITE) > 0)) {
+                @compileError("Cannot clobber a read only file! Did you forget to add '| WRITE'?");
+            }
+
+            if(flags & READ > 0) {
+                if(flags & WRITE > 0) {
+                    posixFlags |= O_RDWR;
+                }
+                else {
+                    posixFlags |= O_RDONLY;
+                }
+            }
+            else if (flags & WRITE > 0) {
+                posixFlags |= O_WRONLY;
             }
             else {
-                posixFlags |= O_RDONLY;
+                assert(true);
             }
-        }
-        else if (flags & WRITE > 0) {
-            posixFlags |= O_WRONLY;
-        }
-        else {
-            assert(true);
-        }
 
-        if(flags & WRITE > 0) {
-            posixFlags |= O_CREAT;
-        }
+            if(flags & WRITE > 0) {
+                posixFlags |= O_CREAT;
+            }
 
-        if(flags & CLOBBER > 0) {
-            posixFlags |= O_TRUNC;
+            if(flags & CLOBBER > 0) {
+                posixFlags |= O_TRUNC;
+            }
         }
 
         const fd = try os.openC(path, posixFlags, 0);
         return openHandle(fd);
     }
 
-    pub fn open(path: []const u8, flags: u32) OpenError!File {
+    pub fn open(path: []const u8, comptime flags: u32) OpenError!File {
         if (windows.is_the_target) {
             const path_w = try windows.sliceToPrefixedFileW(path);
             return openW(&path_w, flags);

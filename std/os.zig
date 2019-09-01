@@ -256,6 +256,7 @@ pub const ReadError = error{
     OperationAborted,
     BrokenPipe,
     Unexpected,
+    IncorrectOpenMode
 };
 
 /// Returns the number of bytes that were read, which can be less than
@@ -384,6 +385,7 @@ pub const WriteError = error{
     SystemResources,
     OperationAborted,
     Unexpected,
+    IncorrectOpenMode,
 };
 
 /// Write to a file descriptor. Keeps trying if it gets interrupted.

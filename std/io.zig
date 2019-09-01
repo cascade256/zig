@@ -20,25 +20,25 @@ pub const GetStdIoError = os.windows.GetStdHandleError;
 pub fn getStdOut() GetStdIoError!File {
     if (os.windows.is_the_target) {
         const handle = try os.windows.GetStdHandle(os.windows.STD_OUTPUT_HANDLE);
-        return File.openHandle(handle);
+        return File.openHandle(handle, File.WRITE);
     }
-    return File.openHandle(os.STDOUT_FILENO);
+    return File.openHandle(os.STDOUT_FILENO, File.WRITE);
 }
 
 pub fn getStdErr() GetStdIoError!File {
     if (os.windows.is_the_target) {
         const handle = try os.windows.GetStdHandle(os.windows.STD_ERROR_HANDLE);
-        return File.openHandle(handle);
+        return File.openHandle(handle, File.WRITE);
     }
-    return File.openHandle(os.STDERR_FILENO);
+    return File.openHandle(os.STDERR_FILENO, File.WRITE);
 }
 
 pub fn getStdIn() GetStdIoError!File {
     if (os.windows.is_the_target) {
         const handle = try os.windows.GetStdHandle(os.windows.STD_INPUT_HANDLE);
-        return File.openHandle(handle);
+        return File.openHandle(handle, File.READ);
     }
-    return File.openHandle(os.STDIN_FILENO);
+    return File.openHandle(os.STDIN_FILENO, File.READ);
 }
 
 pub const SeekableStream = @import("io/seekable_stream.zig").SeekableStream;

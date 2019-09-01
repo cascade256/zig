@@ -12,6 +12,7 @@ const maxInt = std.math.maxInt;
 pub const File = struct {
     /// The OS-specific file descriptor or file handle.
     handle: os.fd_t,
+    openMode: OpenMode,
 
     pub const Mode = switch (builtin.os) {
         Os.windows => void,
@@ -25,34 +26,41 @@ pub const File = struct {
 
     pub const OpenError = windows.CreateFileError || os.OpenError;
 
+    const OpenMode = packed struct {
+        read: bool,
+        write: bool,
+        clobber: bool,
+        _:u5//Pad out to a full byte
+    };
 
     pub const READ = 1;
     pub const WRITE = 2;
     pub const CLOBBER = 4;
 
-    pub fn openW(path: [*]const u16, comptime flags: u32) OpenError!File{
+    pub fn openW(path: [*]const u16, comptime flags: u8) OpenError!File{
         assert(windows.is_the_target);
 
+        const openMode: OpenMode = @bitCast(OpenMode, flags);
         comptime var desiredAccess: u32 = 0;
         comptime var creationDisposition: u32 = windows.OPEN_EXISTING;
 
         comptime {
-            if((flags & CLOBBER) > 0 and !((flags & WRITE) > 0)) {
-                @compileError("Cannot clobber a read only file! Did you forget to add '| WRITE'?");
+            if(openMode.clobber and !openMode.write) {
+                @compileError("Cannot clobber a read only file! Did you forget to add '| File.WRITE'?");
             }
                 
-            if(flags & READ > 0) {
+            if(openMode.read) {
                 desiredAccess |= windows.GENERIC_READ;
             }
-            if(flags & WRITE > 0) {
+            if(openMode.write) {
                 desiredAccess |= windows.GENERIC_WRITE;
             }
     
-            if(flags & CLOBBER > 0) {
+            if(openMode.clobber) {
                 creationDisposition = windows.CREATE_ALWAYS;
             }
 
-            if(flags & WRITE > 0) {
+            if(openMode.write) {
                 creationDisposition = windows.OPEN_ALWAYS;
             }
         }
@@ -67,51 +75,49 @@ pub const File = struct {
             null
         );
 
-        return openHandle(handle);
+        return openHandle(handle, flags);
     }
 
-    pub fn openC(path: []const u8, comptime flags: u32) OpenError!File {
+    pub fn openC(path: []const u8, comptime flags: u8) OpenError!File {
         if (windows.is_the_target) {
             const path_w = try windows.cStrToPrefixedFileW(path);
             return openW(&path_w, flags);
         }
 
+        const openMode = @bitCast(flags, OpenMode);
         comptime var posixFlags: u32 = O_LARGEFILE;
 
         comptime {
-            if((flags & CLOBBER) > 0 and !((flags & WRITE) > 0)) {
-                @compileError("Cannot clobber a read only file! Did you forget to add '| WRITE'?");
+            if(openMode.clobber and !openMode.write) {
+                @compileError("Cannot clobber a read only file! Did you forget to add '| File.WRITE'?");
             }
 
-            if(flags & READ > 0) {
-                if(flags & WRITE > 0) {
+            if(openMode.read) {
+                if(openMode.write) {
                     posixFlags |= O_RDWR;
                 }
                 else {
                     posixFlags |= O_RDONLY;
                 }
             }
-            else if (flags & WRITE > 0) {
+            else if (openMode.write) {
                 posixFlags |= O_WRONLY;
             }
-            else {
-                assert(true);
-            }
 
-            if(flags & WRITE > 0) {
+            if(openMode.write) {
                 posixFlags |= O_CREAT;
             }
 
-            if(flags & CLOBBER > 0) {
+            if(openMode.clobber) {
                 posixFlags |= O_TRUNC;
             }
         }
 
         const fd = try os.openC(path, posixFlags, 0);
-        return openHandle(fd);
+        return openHandle(fd, flags);
     }
 
-    pub fn open(path: []const u8, comptime flags: u32) OpenError!File {
+    pub fn open(path: []const u8, comptime flags: u8) OpenError!File {
         if (windows.is_the_target) {
             const path_w = try windows.sliceToPrefixedFileW(path);
             return openW(&path_w, flags);
@@ -120,8 +126,8 @@ pub const File = struct {
         return openC(&path_c, flags);
     }
 
-    pub fn openHandle(handle: os.fd_t) File {
-        return File{ .handle = handle };
+    pub fn openHandle(handle: os.fd_t, flags: u8) File {
+        return File{ .handle = handle, .openMode = @bitCast(OpenMode, flags)};
     }
 
     /// Test for the existence of `path`.
@@ -276,12 +282,18 @@ pub const File = struct {
     pub const ReadError = os.ReadError;
 
     pub fn read(self: File, buffer: []u8) ReadError!usize {
+        if(!self.openMode.read) {
+            return ReadError.IncorrectOpenMode;
+        }
         return os.read(self.handle, buffer);
     }
 
     pub const WriteError = os.WriteError;
 
     pub fn write(self: File, bytes: []const u8) WriteError!void {
+        if(!self.openMode.write) {
+            return WriteError.IncorrectOpenMode;
+        }
         return os.write(self.handle, bytes);
     }
 
